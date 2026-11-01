@@ -2,11 +2,11 @@
 
 A personal assistant I use every day, built with n8n as a **multi-agent system**. I talk to it on Telegram in natural language; an **orchestrator agent** decides which specialised agent to call to read or update my **Google Calendar**, my **Gmail** inbox and my **job-application tracker** (Google Sheets).
 
-> **Current version:** v2.1 (orchestrator + 3 specialised agents, text **and voice** input). Previous versions are kept in `workflows/` and as [releases](../../releases).
+> **Current version:** v2.2: orchestrator + 3 specialised agents, text **and voice** input, and a **proactive morning briefing**. Previous versions are kept in `workflows/` and as [releases](../../releases).
 
-| Voice messages (v2.1) | Multi-agent routing (v2.0) |
-|---|---|
-| ![Demo v2.1](docs/demo-v2.1.png) | ![Demo v2](docs/demo-v2.png) |
+| Morning briefing (v2.2) | Voice messages (v2.1) | Multi-agent routing (v2.0) |
+|---|---|---|
+| ![Demo v2.2](docs/demo-v2.2.png) | ![Demo v2.1](docs/demo-v2.1.png) | ![Demo v2](docs/demo-v2.png) |
 
 ---
 
@@ -19,14 +19,18 @@ A personal assistant I use every day, built with n8n as a **multi-agent system**
 | "Which important emails did I get in the last 2 days?" | Orchestrator → `agent_emails` → `lire_emails` (Gmail search syntax), newsletters and ads filtered out |
 | "How many applications did I send, and which are pending?" | Orchestrator → `agent_candidatures` → `lire_candidatures` (read-only Google Sheet) |
 | 🎤 Voice: "Add a meeting with the lab on Thursday at 10" | Voice note downloaded → transcribed by Gemini → the transcription is shown back (🎤 ...) → orchestrator → `agent_agenda` → `creer_evenement` |
+| *(nothing: every day at 7:30)* | **Morning briefing** pushed to Telegram: today's events, important unread emails, applications pending or to follow up |
+| `/briefing` | Same briefing on demand |
 | A photo or a sticker | Polite refusal: "I only understand text and voice messages" (no LLM call) |
 | "I'm sick on Tuesday" | Orchestrator → `agent_agenda` to find the affected events, then **asks for my approval and the recipient's address** before calling `agent_emails` to create cancellation drafts |
 
 ---
 
-## Architecture (v2.1)
+## Architecture (v2.2)
 
-![Workflow v2.1](docs/architecture-v2.1.png)
+![Workflow v2.2](docs/architecture-v2.2.png)
+
+The workflow has two entry points: the conversational assistant (Telegram) and the morning briefing (schedule or `/briefing`).
 
 ```
 Telegram Trigger
@@ -34,6 +38,7 @@ Telegram Trigger
           └─► Switch (message type)
                 ├─ voice ─► Telegram · Get file ─► Gemini 3.1 Flash-Lite · Transcribe ─► texte ─┐
                 ├─ text  ─► texte ────────────────────────────────────────────────────────────┤
+                ├─ /briefing ─► (morning briefing pipeline, below)
                 └─ other ─► Telegram · "text and voice only"                                    │
                                                                                                ▼
               ORCHESTRATOR ── Gemini 3.5 Flash · Simple Memory (10 messages, keyed by chat ID)
@@ -49,6 +54,14 @@ Telegram Trigger
                 │
                 ├─ success ─► Telegram · Send message (HTML mode, escaped)
                 └─ error   ─► Telegram · "AI service temporarily overloaded"
+
+Morning briefing (no agent)
+Schedule 7:30 Europe/Paris ─┐
+/briefing ──────────────────┴─► Google Calendar · today's events
+                               ─► Gmail · unread last 24 h (no promotions/social)
+                               ─► Google Sheets · applications
+                               ─► Gemini 3.1 Flash-Lite · write the briefing (1 call)
+                               ─► Telegram · send
 ```
 
 Sub-agents are n8n **AI Agent Tool** nodes: for the orchestrator, each one is a single tool. Tool parameters (dates, search queries, email fields) are filled by the models at run time with `$fromAI()`.
@@ -59,6 +72,9 @@ Sub-agents are n8n **AI Agent Tool** nodes: for the orchestrator, each one is a 
 
 | Decision | Why |
 |---|---|
+| **No agent for the briefing** (v2.2) | The briefing always needs the same three sources, so the path is known in advance: data is fetched deterministically and a single LLM call writes the summary. Nothing can be forgotten by the model, and it costs 1 LLM call instead of ~8 through the orchestrator. *An agent is used only where the path depends on the request.* |
+| **`Execute Once` on the briefing nodes** (v2.2) | n8n runs a node once per input item: without it, Gmail and Sheets would be queried once per calendar event. |
+| **`Always Output Data` on the data sources** (v2.2) | An empty calendar day or inbox must not stop the pipeline; the prompt then outputs "Nothing planned today". |
 | **Normalise inputs before the agent** (v2.1) | Voice and text are both converted into one `texte` field before the orchestrator, so the agent logic doesn't change with the input type. Adding a new input (e.g. photos) means adding one branch, not touching the agents. |
 | **Show the transcription back** (v2.1) | Each voice answer starts with what the bot understood (🎤 ...), so a speech-recognition error is visible immediately instead of producing a silent wrong action. |
 | **Unsupported messages rejected without an LLM call** (v2.1) | Photos, stickers or files go to a fallback branch: no wasted quota, no hallucinated answer. |
@@ -77,11 +93,11 @@ Sub-agents are n8n **AI Agent Tool** nodes: for the orchestrator, each one is a 
 
 ## Setup
 
-1. Import `workflows/assistant-personnel-v2.1.json` into n8n (**⋯ → Import from file**).
+1. Import `workflows/assistant-personnel-v2.2.json` into n8n (**⋯ → Import from file**).
 2. Create the credentials: **Telegram API** (token from [@BotFather](https://t.me/BotFather)), **Google Gemini API** (Google AI Studio), **Google Calendar**, **Gmail** and **Google Sheets** (OAuth2).
-3. In the `If` node, replace `YOUR_TELEGRAM_CHAT_ID` with your chat ID (send one message to the bot and read `message.chat.id` in the trigger output).
-4. In `lire_candidatures`, replace `YOUR_GOOGLE_SHEET_ID` with your tracker's ID (sheet name: `Candidatures`).
-5. Calendar tools use your `primary` calendar by default.
+3. In the `If` node **and** in `Envoyer briefing`, replace `YOUR_TELEGRAM_CHAT_ID` with your chat ID (send one message to the bot and read `message.chat.id` in the trigger output).
+4. In `lire_candidatures` **and** `Candidatures`, replace `YOUR_GOOGLE_SHEET_ID` with your tracker's ID (sheet name: `Candidatures`).
+5. Calendar nodes use your `primary` calendar by default. The workflow timezone is set to `Europe/Paris` (**⋯ → Settings**); change it for another time zone.
 6. Publish the workflow and write to your bot.
 
 Tool names and prompts are in French because I use the assistant in French.
@@ -96,6 +112,7 @@ Tool names and prompts are in French because I use the assistant in French.
 - **Free-tier LLM:** subject to rate limits and `503` errors at demand peaks (handled by retry + error message).
 - **Date interpretation** depends on the model; the confirmation message makes mistakes visible.
 - **Simple Memory** is short-term and not persistent across n8n restarts.
+- **Briefing relevance** (which emails are "important") is judged by the LLM from subject and snippet only; it can miss or over-include emails.
 - **Single user** by design.
 - **Privacy:** email snippets and calendar titles are sent to the Gemini API.
 
@@ -106,7 +123,7 @@ Tool names and prompts are in French because I use the assistant in French.
 - [x] **v1.0**: single agent, 4 tools (Calendar and Gmail), Telegram interface. See `workflows/assistant-personnel-v1.json`
 - [x] **v2.0**: multi-agent: orchestrator + `agent_agenda`, `agent_emails`, `agent_candidatures`; retry and error handling
 - [x] **v2.1**: Telegram voice messages (Gemini transcription), transcription shown back, unsupported message types rejected
-- [ ] **v2.2**: proactive morning briefing (scheduled)
+- [x] **v2.2**: proactive morning briefing at 7:30 + `/briefing` on demand (deterministic pipeline, single LLM call)
 - [ ] **v2.3**: approve / cancel buttons before any write action
 - [ ] **v2.4**: evaluation set (~15 prompts) with routing and tool-selection accuracy, using n8n Evaluations
 
