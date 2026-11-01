@@ -1,47 +1,48 @@
 # Personal AI Agent (n8n + Gemini + Telegram)
 
-A personal assistant **agent** I use every day, built with n8n. I talk to it on Telegram in natural language; it decides by itself which tools to call to read or update my **Google Calendar** and my **Gmail** inbox.
+A personal assistant I use every day, built with n8n as a **multi-agent system**. I talk to it on Telegram in natural language; an **orchestrator agent** decides which specialised agent to call to read or update my **Google Calendar**, my **Gmail** inbox and my **job-application tracker** (Google Sheets).
 
-> **Version:** v1.0 (single agent). A multi-agent version (orchestrator + specialised sub-agents) is in progress, see [Roadmap](#roadmap).
+> **Current version:** v2.0 (orchestrator + 3 specialised agents). The single-agent v1.0 is kept in `workflows/` and as a [release](../../releases).
 
-| Reading and updating the calendar | Handling an absence: multi-step reasoning |
-|---|---|
-| ![Calendar demo](docs/demo.png) | ![Absence demo](docs/demo-2.png) |
+![Demo v2](docs/demo-v2.png)
 
 ---
 
 ## What it does
 
-| I write on Telegram | What the agent does |
+| I write on Telegram | What happens |
 |---|---|
-| "What do I have on Tuesday?" | Calls `lire_agenda` with the right date range and lists the events |
-| "Add dentist Tuesday at 3pm" | Resolves "Tuesday" to an exact date, calls `creer_evenement`, confirms title, day and time |
-| "Which important emails did I get in the last 2 days?" | Calls `lire_emails` with a Gmail search query, filters out newsletters and ads, summarises each email in one line |
-| "Draft an email to X saying I'll be absent on Monday" | Calls `creer_brouillon`: creates a **draft** in Gmail, never sends it |
-| "I'm sick on Tuesday" | Reads the calendar for that day, finds the affected appointments, proposes cancellation drafts and **asks for the missing email address instead of inventing it** |
-
-The last case is what makes it an agent rather than a fixed workflow: the model chains several tools and asks for missing information on its own, guided only by its system prompt.
+| "What do I have on Tuesday?" | Orchestrator → `agent_agenda` → `lire_agenda` with the exact date range |
+| "Add dentist Tuesday at 3pm" | Orchestrator resolves "Tuesday" to an exact date → `agent_agenda` → `creer_evenement` |
+| "Which important emails did I get in the last 2 days?" | Orchestrator → `agent_emails` → `lire_emails` (Gmail search syntax), newsletters and ads filtered out |
+| "How many applications did I send, and which are pending?" | Orchestrator → `agent_candidatures` → `lire_candidatures` (read-only Google Sheet) |
+| "I'm sick on Tuesday" | Orchestrator → `agent_agenda` to find the affected events, then **asks for my approval and the recipient's address** before calling `agent_emails` to create cancellation drafts |
 
 ---
 
-## Architecture
+## Architecture (v2.0)
 
-![Workflow](docs/architecture.png)
+![Workflow v2](docs/architecture-v2.png)
 
 ```
 Telegram Trigger
    └─► If (chat ID allow-list)
-          └─► AI Agent ── Chat model: Google Gemini 3.1 Flash-Lite
-                │        ── Memory: Simple Memory (last 10 messages, keyed by Telegram chat ID)
-                │        ── Tools:
-                │             • lire_agenda       Google Calendar  · Event · Get Many
-                │             • creer_evenement   Google Calendar  · Event · Create
-                │             • lire_emails       Gmail            · Message · Get Many (Gmail search syntax)
-                │             • creer_brouillon   Gmail            · Draft · Create
-                └─► Telegram · Send message (HTML parse mode, escaped output)
+          └─► ORCHESTRATOR ── Gemini 3.5 Flash · Simple Memory (10 messages, keyed by chat ID)
+                │              retry ×3 (5 s) · error output
+                ├─ agent_agenda        ── Gemini 3.1 Flash-Lite
+                │     ├─ lire_agenda          Google Calendar · Get Many
+                │     └─ creer_evenement      Google Calendar · Create
+                ├─ agent_emails        ── Gemini 3.1 Flash-Lite
+                │     ├─ lire_emails          Gmail · Get Many (search query)
+                │     └─ creer_brouillon      Gmail · Draft · Create
+                └─ agent_candidatures  ── Gemini 3.1 Flash-Lite
+                      └─ lire_candidatures    Google Sheets · Get Rows (read-only)
+                │
+                ├─ success ─► Telegram · Send message (HTML mode, escaped)
+                └─ error   ─► Telegram · "AI service temporarily overloaded"
 ```
 
-Tool parameters (dates, search query, email subject and body, etc.) are filled by the model at run time using n8n's `$fromAI()` mechanism.
+Sub-agents are n8n **AI Agent Tool** nodes: for the orchestrator, each one is a single tool. Tool parameters (dates, search queries, email fields) are filled by the models at run time with `$fromAI()`.
 
 ---
 
@@ -49,56 +50,64 @@ Tool parameters (dates, search query, email subject and body, etc.) are filled b
 
 | Decision | Why |
 |---|---|
-| **No "send email" tool** | The agent can only create drafts. Nothing leaves my inbox without me reviewing it: safety by construction rather than by prompt. |
-| **Chat ID allow-list** (`If` node) | A Telegram bot is publicly reachable. Messages from any other chat are dropped before reaching the LLM or my Google accounts. |
-| **Current date injected in the system prompt** | Without it, the model cannot resolve "tomorrow" or "Tuesday". All dates passed to tools use ISO 8601 with the `Europe/Paris` offset. |
-| **"Ask, never guess" rule** | If a title, time or recipient address is missing, the agent asks before acting. |
-| **Plain-text output + HTML escaping** | Telegram's Markdown parser rejects unbalanced `*` / `_` (common in email addresses). Output is sent in HTML mode with `&`, `<`, `>` escaped. |
-| **Dedicated Gemini API project** | Rate limits apply per Google Cloud project; this agent does not share quota with my other workflows. |
-| **Memory keyed by chat ID** | Allows follow-up messages ("yes, prepare it") within a conversation. |
+| **Orchestrator + specialised agents** (v2) | An agent with many tools picks the wrong tool more often. Each sub-agent has 1–2 tools and a short, focused system prompt; the orchestrator only routes and talks to me. Adding a new domain means adding one agent, not rewriting one big prompt. |
+| **Self-contained delegation** | Sub-agents have no memory and don't see the conversation. The orchestrator must pass a complete request with absolute dates ("Tuesday 3 November 2026", never "tomorrow"). |
+| **Strong model for routing, light model for execution** | The orchestrator (Gemini 3.5 Flash) does the hard part: understanding and planning. Sub-agents (Gemini 3.1 Flash-Lite) execute narrow tasks. Cheaper, and the free-tier quota is per model. |
+| **No "send email" tool** | Only drafts can be created. Nothing leaves my inbox without me reviewing it: safety by construction, not by prompt. |
+| **Approval before any email action** | For an absence, the orchestrator lists affected events and waits for my explicit "yes" + recipient address before delegating to `agent_emails`. |
+| **Read-only access to the application tracker** | The agent can report on my applications but cannot modify the sheet. |
+| **Chat ID allow-list** (`If` node) | A Telegram bot is publicly reachable; other chats are dropped before reaching any LLM or Google account. |
+| **Retry + error branch** | Gemini's free tier returns occasional `503` errors. The orchestrator retries 3 times, then sends a clear message instead of failing silently. |
+| **Plain text + HTML escaping** | Telegram's Markdown parser rejects unbalanced `*` / `_` (common in email addresses). |
+| **Dedicated Gemini API project** | Rate limits apply per project; this agent doesn't share quota with my other workflows. |
 
 ---
 
 ## Setup
 
-1. Import `workflows/assistant-personnel-v1.json` into n8n (**⋯ → Import from file**).
-2. Create the credentials:
-   - **Telegram API**: bot token from [@BotFather](https://t.me/BotFather)
-   - **Google Gemini API**: key from Google AI Studio
-   - **Google Calendar OAuth2** and **Gmail OAuth2**
-3. In the `If` node, replace `YOUR_TELEGRAM_CHAT_ID` with your own chat ID. Send one message to the bot and read `message.chat.id` in the trigger output.
-4. The two Calendar tools use your `primary` calendar by default; select another one if needed.
-5. Publish the workflow and write to your bot.
+1. Import `workflows/assistant-personnel-v2.json` into n8n (**⋯ → Import from file**).
+2. Create the credentials: **Telegram API** (token from [@BotFather](https://t.me/BotFather)), **Google Gemini API** (Google AI Studio), **Google Calendar**, **Gmail** and **Google Sheets** (OAuth2).
+3. In the `If` node, replace `YOUR_TELEGRAM_CHAT_ID` with your chat ID (send one message to the bot and read `message.chat.id` in the trigger output).
+4. In `lire_candidatures`, replace `YOUR_GOOGLE_SHEET_ID` with your tracker's ID (sheet name: `Candidatures`).
+5. Calendar tools use your `primary` calendar by default.
+6. Publish the workflow and write to your bot.
 
-Tool names and the system prompt are in French because I use the assistant in French. The agent answers in French.
+Tool names and prompts are in French because I use the assistant in French.
 
 ---
 
 ## Limitations
 
-- **No quantitative evaluation yet.** It has been tested manually on the scenarios above only. A test set with tool-selection accuracy is planned (see Roadmap).
-- **Free-tier LLM.** Subject to Gemini rate limits and occasional `503 Service Unavailable` errors during demand peaks.
-- **Date interpretation** depends on the model. Ambiguous phrasing ("next Tuesday" on a Monday) can be resolved differently from what the user meant; the confirmation message makes this visible.
-- **Simple Memory** is kept in the n8n instance memory: short-term only, not persistent across restarts.
-- **Single user** by design (allow-list on one chat ID).
-- **Privacy:** email subjects and snippets are sent to the Gemini API to be summarised.
+- **No quantitative evaluation yet.** Tested manually on the scenarios above. A test set measuring routing and tool-selection accuracy is planned (v2.4).
+- **Latency:** about 6–10 s per message in v2 (orchestrator + sub-agent = at least 4 LLM calls), versus 2–3 s in v1.
+- **Free-tier LLM:** subject to rate limits and `503` errors at demand peaks (handled by retry + error message).
+- **Date interpretation** depends on the model; the confirmation message makes mistakes visible.
+- **Simple Memory** is short-term and not persistent across n8n restarts.
+- **Single user** by design.
+- **Privacy:** email snippets and calendar titles are sent to the Gemini API.
 
 ---
 
-## Roadmap
+## Versions & roadmap
 
-- [x] **v1.0**: single agent, Calendar and Gmail tools, Telegram interface
-- [ ] **v2.0**: multi-agent: an orchestrator delegating to `agent_agenda`, `agent_emails` and `agent_candidatures` (job-application tracker in Google Sheets); retry and error message on LLM failure
+- [x] **v1.0**: single agent, 4 tools (Calendar and Gmail), Telegram interface. See `workflows/assistant-personnel-v1.json`
+- [x] **v2.0**: multi-agent: orchestrator + `agent_agenda`, `agent_emails`, `agent_candidatures`; retry and error handling
 - [ ] **v2.1**: Telegram voice messages (speech-to-text)
 - [ ] **v2.2**: proactive morning briefing (scheduled)
 - [ ] **v2.3**: approve / cancel buttons before any write action
-- [ ] **v2.4**: evaluation set (~15 prompts) with tool-selection accuracy, using n8n Evaluations
+- [ ] **v2.4**: evaluation set (~15 prompts) with routing and tool-selection accuracy, using n8n Evaluations
+
+### v1.0 demo
+
+| Reading and updating the calendar | Handling an absence: multi-step reasoning |
+|---|---|
+| ![Calendar demo](docs/demo.png) | ![Absence demo](docs/demo-2.png) |
 
 ---
 
 ## Tech stack
 
-n8n · AI Agent (tool calling) · Google Gemini · Telegram Bot API · Google Calendar API · Gmail API
+n8n · Multi-agent orchestration (AI Agent + AI Agent Tool) · Google Gemini · Telegram Bot API · Google Calendar, Gmail and Sheets APIs
 
 ## Author
 
