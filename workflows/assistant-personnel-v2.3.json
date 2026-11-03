@@ -1,0 +1,1469 @@
+{
+  "name": "Assistant personnel – Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        -480,
+        -96
+      ],
+      "id": "a3ac36d3-fb45-45de-8d36-0ae721ed5393",
+      "name": "Telegram Trigger",
+      "credentials": {
+        "telegramApi": {
+          "id": "9hH3DPthDV8YMe0L",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        872,
+        120
+      ],
+      "id": "093e8a59-c935-4eb6-910e-1f16cd626a78",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "NtIi3KJpM8RdxMWn",
+          "name": "Gemini – Agent perso"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        1000,
+        120
+      ],
+      "id": "362ed4a8-5f8c-49f3-a79c-8f9fe03a3c33",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Lit les événements de l'agenda d'Aymane entre deux dates.",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "id"
+        },
+        "limit": 20,
+        "timeMin": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('After', ``, 'string') }}",
+        "timeMax": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Before', ``, 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        1096,
+        328
+      ],
+      "id": "3ca3220f-4334-4d51-93d7-2846efbcb6a7",
+      "name": "lire_agenda",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "p07clfA8Th8tAhz2",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Crée un événement dans l'agenda d'Aymane.",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "id"
+        },
+        "start": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Start', ``, 'string') }}",
+        "end": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('End', ``, 'string') }}",
+        "additionalFields": {
+          "summary": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Summary', ``, 'string') }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        1176,
+        536
+      ],
+      "id": "f7657553-415b-4527-bd32-da0a296fefea",
+      "name": "creer_evenement",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "p07clfA8Th8tAhz2",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ (($('Texte vocal').isExecuted ? '🎤 ' + $('Texte vocal').item.json.texte + '\\n\\n' : '') + $json.output).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2528,
+        -256
+      ],
+      "id": "3b58777f-228c-4fcf-8166-3f55f7887725",
+      "name": "Send a text message",
+      "credentials": {
+        "telegramApi": {
+          "id": "9hH3DPthDV8YMe0L",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "f5a8dc3c-78ff-47e0-bfc4-036fa51c700c",
+              "leftValue": "={{ $json.message.chat.id }}",
+              "rightValue": "YOUR_TELEGRAM_CHAT_ID",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        -256,
+        -96
+      ],
+      "id": "31a7c3f3-5723-4fe4-902d-a5cba6c4fce7",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Cherche des emails dans la boîte Gmail d'Aymane. Le paramètre de recherche utilise la syntaxe Gmail, par exemple : \"is:unread newer_than:2d\", \"from:nom@domaine.com\", \"subject:entretien newer_than:7d\".",
+        "operation": "getAll",
+        "limit": 10,
+        "filters": {
+          "q": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Search', ``, 'string') }}"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.2,
+      "position": [
+        1640,
+        328
+      ],
+      "id": "5e258969-55b1-4887-b698-70461890e0f0",
+      "name": "lire_emails",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZWffNWO6a03FmdvO",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Crée un brouillon d'email dans Gmail (ne l'envoie pas). Aymane le relira et l'enverra lui-même.",
+        "resource": "draft",
+        "subject": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Subject', ``, 'string') }}",
+        "message": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Message', ``, 'string') }}",
+        "options": {
+          "sendTo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('To_Email', ``, 'string') }}"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.2,
+      "position": [
+        1768,
+        328
+      ],
+      "id": "f373ac33-c57f-4b6a-8738-86d7540d46ba",
+      "name": "creer_brouillon",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZWffNWO6a03FmdvO",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Gère l'agenda d'Aymane : lire, créer, modifier et supprimer des événements. Transmets la demande complète avec les dates exactes.",
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Prompt__User_Message_', ``, 'string') }}",
+        "options": {
+          "systemMessage": "=Tu gères l'agenda Google d'Aymane.\nDate et heure actuelles : {{ $now.setZone('Europe/Paris').setLocale('fr').toFormat('cccc d LLLL yyyy, HH:mm') }} (fuseau Europe/Paris).\n- Pour lire : lire_agenda. Pour créer : creer_evenement.\n- Dates au format ISO 8601 avec fuseau (ex. 2026-11-03T15:00:00+01:00). Durée par défaut : 1 heure.\n- Réponds avec la liste exacte des événements (titre, jour, heure) ou la confirmation de création. N'invente rien.\n- creer_evenement demande la validation d'Aymane sur Telegram. Si elle est refusée, réponds que l'événement n'a pas été créé, sans réessayer.\n- Pour supprimer : utilise d'abord lire_agenda sur le jour concerné pour trouver l'événement et son id, puis supprimer_evenement avec cet id. Dans le paramètre Titre, mets le titre, le jour et l'heure.\n- Si plusieurs événements correspondent, ne supprime rien et liste-les pour qu'Aymane précise.\n- supprimer_evenement demande aussi la validation d'Aymane. Si elle est refusée, réponds que rien n'a été supprimé.\n- Pour modifier : utilise d'abord lire_agenda pour trouver l'événement et son id, puis modifier_evenement. Dans Titre, mets l'événement actuel (titre, jour, heure).\n- Pour modifier, fournis toujours Summary, Start et End complets : reprends les valeurs actuelles pour ce qui ne change pas.\n- modifier_evenement demande la validation d'Aymane. Si elle est refusée, réponds que rien n'a été modifié."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 3,
+      "position": [
+        1128,
+        120
+      ],
+      "id": "9cd8e99d-3ffd-45da-8003-fa7409e5004e",
+      "name": "agent_agenda"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        968,
+        328
+      ],
+      "id": "b1e1b764-e1af-4293-bdfc-28147bfb2249",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "NtIi3KJpM8RdxMWn",
+          "name": "Gemini – Agent perso"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Gère les emails d'Aymane : chercher, résumer, créer des brouillons. Transmets la demande complète, avec l'adresse du destinataire si besoin.",
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Prompt__User_Message_', ``, 'string') }}",
+        "options": {
+          "systemMessage": "=Tu gères la boîte Gmail d'Aymane.\n- Pour chercher : lire_emails, avec la syntaxe de recherche Gmail (par défaut \"is:unread newer_than:2d\").\n- Résume chaque email important en une ligne : expéditeur, sujet, action à faire. Ignore publicités et newsletters, sauf demande explicite.\n- Tu ne peux jamais envoyer d'email. Pour écrire, utilise creer_brouillon. Brouillons en français poli et court, signés \"Aymane Snoussi\".\n- Si l'adresse du destinataire n'est pas dans la demande, ne crée rien et réponds qu'il manque l'adresse."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 3,
+      "position": [
+        1624,
+        120
+      ],
+      "id": "b30ec5ce-2fc0-49d9-8eef-3b403a1cbbdc",
+      "name": "agent_emails"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        1512,
+        328
+      ],
+      "id": "f6ce8bfd-fa17-4aee-a45b-b96e5dcb6101",
+      "name": "Google Gemini Chat Model2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "NtIi3KJpM8RdxMWn",
+          "name": "Gemini – Agent perso"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Consulte et met à jour le suivi des candidatures d'Aymane (entreprises, postes, statuts, dates).",
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Prompt__User_Message_', ``, 'string') }}",
+        "options": {
+          "systemMessage": "=Tu gères le suivi des candidatures d'Aymane.\n- Pour consulter : lire_candidatures. Réponds précisément : nombre de candidatures, entreprises, statuts, dates.\n- Pour changer un statut : utilise d'abord lire_candidatures pour retrouver la candidature et sa valeur row_number, puis appelle mettre_a_jour_statut avec Ligne = cette valeur row_number, Entreprise = le nom de l'entreprise, Statut = le nouveau statut (même vocabulaire que les statuts existants).\n- Si plusieurs candidatures correspondent à la même entreprise, ne modifie rien et liste-les pour qu'Aymane précise.\n- mettre_a_jour_statut demande la validation d'Aymane. Si elle est refusée, réponds que rien n'a été modifié.\n- N'invente aucune donnée. Si la colonne demandée n'existe pas, dis-le.\n- Ne demande jamais de confirmation par écrit avant mettre_a_jour_statut : la validation Telegram suffit.\n- Si mettre_a_jour_statut ne renvoie aucune ligne mise à jour (résultat vide), la mise à jour a échoué : dis-le clairement à Aymane avec le nom de l'entreprise cherché. Ne prétends jamais qu'une modification a été faite sans résultat qui le confirme."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 3,
+      "position": [
+        2056,
+        120
+      ],
+      "id": "bb77fa21-ec0e-43aa-9ae8-ed8eddc8fd8a",
+      "name": "agent_candidatures"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        1896,
+        328
+      ],
+      "id": "83389874-5dda-40c7-ae28-1f6ef493577a",
+      "name": "Google Gemini Chat Model3",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "NtIi3KJpM8RdxMWn",
+          "name": "Gemini – Agent perso"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Lit toutes les lignes du tableau de suivi des candidatures.",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Candidatures",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        2024,
+        328
+      ],
+      "id": "2dc48416-4690-4cd6-b31f-a825ca1b01c8",
+      "name": "lire_candidatures",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "yRK2FMvA8gHl65R2",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.texte }}",
+        "options": {
+          "systemMessage": "=Tu es l'orchestrateur de l'assistant personnel d'Aymane. Tu ne fais rien toi-même : tu délègues aux agents spécialisés.\nDate et heure actuelles : {{ $now.setZone('Europe/Paris').setLocale('fr').toFormat('cccc d LLLL yyyy, HH:mm') }} (fuseau Europe/Paris).\n\nAgents disponibles :\n- agent_agenda : tout ce qui concerne l'agenda (lire, créer, modifier, supprimer).\n- agent_emails : tout ce qui concerne les emails.\n- agent_candidatures : tout ce qui concerne les candidatures d'emploi (consulter, mettre à jour un statut).\n\nRègles :\n- Les agents ne voient pas la conversation. Transmets-leur une demande complète et autonome, avec les dates exactes (ex. \"mardi 3 novembre 2026\"), jamais \"demain\" ou \"mardi\".\n- Pour un empêchement : appelle d'abord agent_agenda pour lister les événements du jour concerné, puis propose à Aymane des brouillons d'annulation. Appelle agent_emails seulement s'il donne son accord et l'adresse email.\n- Si une information manque (adresse, heure, titre), demande-la à Aymane avant de déléguer.\n- Tutoie toujours Aymane.\n- N'invente jamais un événement, un email ou une candidature.\n- Tu ne rédiges jamais toi-même le texte d'un email. Propose seulement de préparer un brouillon : c'est agent_emails qui le rédige.\n- N'utilise jamais le mot \"envoyer\" pour un email : tu crées uniquement des brouillons qu'Aymane enverra lui-même.\n- Réponds en français, en peu de phrases, maximum 1500 caractères.\n- Chaque création d'événement est validée par Aymane. Si agent_agenda indique un refus, confirme simplement que rien n'a été ajouté.\n- Ne dis jamais qu'une action est faite ou en attente avant la réponse finale d'agent_agenda.\n- Écris en texte brut : pas de Markdown, pas d'astérisques (*), pas de dièses (#). Pour une liste, commence chaque ligne par un tiret (-).\n- Ne demande jamais de confirmation par écrit avant une création, une modification, une suppression ou une mise à jour de statut : une validation Telegram est envoyée automatiquement.\n- Ne confirme une action à Aymane que si l'agent concerné la confirme explicitement. En cas de doute, dis que l'action n'a pas pu être vérifiée."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1024,
+        -96
+      ],
+      "id": "49d43b61-0856-4e1c-9665-63e50671e9ac",
+      "name": "Orchestrateur",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "Le service IA est temporairement surchargé. Réessaie dans quelques minutes.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2528,
+        0
+      ],
+      "id": "dc817346-7fb6-42c8-a0b6-1ea982ee9d82",
+      "name": "Message erreur",
+      "credentials": {
+        "telegramApi": {
+          "id": "9hH3DPthDV8YMe0L",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 4
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message.voice }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "7a0d4f73-580e-4a31-9931-e5f069743b2f"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "vocal"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 4
+                },
+                "conditions": [
+                  {
+                    "id": "b2833cb7-b2a4-4739-b4e4-a7d5223c302a",
+                    "leftValue": "={{ !!$json.message.text && $json.message.text !== '/briefing' }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "texte"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 4
+                },
+                "conditions": [
+                  {
+                    "id": "96ae2336-1682-40f6-9947-ffc7d5f3c008",
+                    "leftValue": "={{ $json.message.text === '/briefing' }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "briefing"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.5,
+      "position": [
+        -32,
+        -128
+      ],
+      "id": "d7e86d70-da67-41c5-9e1d-bb225c8fb910",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.voice.file_id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        192,
+        -256
+      ],
+      "id": "90c8eb36-d7e8-4239-99b0-e4d226dd1012",
+      "name": "Télécharger audio",
+      "credentials": {
+        "telegramApi": {
+          "id": "9hH3DPthDV8YMe0L",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3.1-flash-lite",
+          "mode": "list",
+          "cachedResultName": "Gemini 3.1 Flash Lite"
+        },
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        416,
+        -256
+      ],
+      "id": "f6277002-e1e5-419e-908e-7a591da9fb1b",
+      "name": "Transcription",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "NtIi3KJpM8RdxMWn",
+          "name": "Gemini – Agent perso"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "91bcf8a8-120a-4f88-9f22-b0dca5734263",
+              "name": "texte",
+              "value": "={{ $json.content.parts[0].text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        640,
+        -256
+      ],
+      "id": "c33794da-32c8-4dc7-99f5-ce7a35435cd4",
+      "name": "Texte vocal"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b68afdac-6e31-4796-a82e-c59e3bc48040",
+              "name": "texte",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        640,
+        0
+      ],
+      "id": "2f637e90-5c41-4298-8b07-b23d3836e70c",
+      "name": "Texte écrit"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "Je comprends seulement les messages texte et vocaux.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        192,
+        144
+      ],
+      "id": "7a45c38e-81d1-45ec-84df-ded106bed833",
+      "name": "Message non supporté",
+      "credentials": {
+        "telegramApi": {
+          "id": "9hH3DPthDV8YMe0L",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -32,
+        240
+      ],
+      "id": "6fb7e688-6fc0-4e1d-a77f-40ad66485b77",
+      "name": "Chaque matin 7h30"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "id"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $now.setZone('Europe/Paris').startOf('day').toISO() }}",
+        "timeMax": "={{ $now.setZone('Europe/Paris').endOf('day').toISO() }}",
+        "options": {
+          "orderBy": "startTime",
+          "recurringEventHandling": "expand",
+          "timeZone": {
+            "__rl": true,
+            "value": "Europe/Paris",
+            "mode": "list",
+            "cachedResultName": "Europe/Paris"
+          }
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        192,
+        -608
+      ],
+      "id": "5b5ffc18-be49-4bd8-96a0-46b187c2ba4e",
+      "name": "Agenda du jour",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "p07clfA8Th8tAhz2",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 15,
+        "filters": {
+          "q": "=is:unread newer_than:1d -category:promotions -category:social"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        416,
+        -608
+      ],
+      "id": "a0aeb391-e96e-4c9c-a34a-d649e193f270",
+      "name": "Emails non lus",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZWffNWO6a03FmdvO",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Candidatures",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        640,
+        -608
+      ],
+      "id": "b94a2b17-c7d2-4491-9b32-7099caecd8b6",
+      "name": "Candidatures",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "yRK2FMvA8gHl65R2",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3.1-flash-lite",
+          "mode": "list",
+          "cachedResultName": "Gemini 3.1 Flash Lite"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Tu rédiges le briefing du matin d'Aymane, envoyé sur Telegram.\nDate : {{ $now.setZone('Europe/Paris').setLocale('fr').toFormat('cccc d LLLL yyyy') }}\n\nAGENDA DU JOUR :\n{{ JSON.stringify($('Agenda du jour').all().map(i => i.json).filter(e => e.summary).map(e => ({ titre: e.summary, debut: e.start?.dateTime || e.start?.date, fin: e.end?.dateTime || e.end?.date }))) }}\n\nEMAILS NON LUS DES DERNIÈRES 24 H :\n{{ JSON.stringify($('Emails non lus').all().map(i => i.json).filter(m => m.id).map(m => ({ de: m.From, sujet: m.Subject, extrait: m.snippet }))) }}\n\nSUIVI DES CANDIDATURES :\n{{ JSON.stringify($('Candidatures').all().map(i => i.json).filter(r => Object.keys(r).length > 0)) }}\n\nRègles :\n- Tutoie Aymane. Français, texte brut : pas de Markdown, pas d'astérisques, pas de dièses. Listes avec des tirets.\n- Structure : une ligne de salutation avec la date, puis trois parties : Agenda, Emails importants, Candidatures.\n- Agenda : chaque événement avec l'heure (HH:MM) et le titre. Si la liste est vide : \"Rien de prévu aujourd'hui.\"\n- Emails : garde seulement ceux qui demandent une action ou concernent une candidature, un entretien, l'université ou un rendez-vous. Une ligne chacun : expéditeur, sujet, action à faire. Ignore publicités, newsletters et alertes automatiques. Si aucun : \"Aucun email important.\"\n- Candidatures : nombre total, nombre en attente, et celles en attente depuis plus de 7 jours, à relancer.\n- N'invente rien : utilise uniquement les données ci-dessus.\n- 1200 caractères maximum."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        1520,
+        -608
+      ],
+      "id": "8ee8ca1b-4882-4672-b566-e52cea51eb1e",
+      "name": "Rédiger briefing",
+      "executeOnce": true,
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "NtIi3KJpM8RdxMWn",
+          "name": "Gemini – Agent perso"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.content.parts[0].text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2528,
+        -608
+      ],
+      "id": "d7f2bb17-4c67-4cd8-8ea3-8e04a9278d77",
+      "name": "Envoyer briefing",
+      "credentials": {
+        "telegramApi": {
+          "id": "9hH3DPthDV8YMe0L",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "message": "={{ $tool.name === 'supprimer_evenement'\n  ? '🗑 Supprimer cet événement ?\\n' + $tool.parameters.Titre\n  : ($tool.name === 'modifier_evenement' ? '✏️ Modifier cet événement ?\\nAvant : ' + $tool.parameters.Titre + '\\nAprès : ' : '📅 Créer cet événement ?\\n')\n    + $tool.parameters.Summary + ', '\n    + DateTime.fromISO($tool.parameters.Start).setZone('Europe/Paris').setLocale('fr').toFormat(\"cccc d LLLL 'de' HH:mm\")\n    + ' à ' + DateTime.fromISO($tool.parameters.End).setZone('Europe/Paris').toFormat('HH:mm') }}",
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double"
+          }
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegramHitlTool",
+      "typeVersion": 1.2,
+      "position": [
+        1224,
+        328
+      ],
+      "id": "8e325b4b-23f2-44c8-8d6f-efdf64519174",
+      "name": "Validation Telegram",
+      "credentials": {
+        "telegramApi": {
+          "id": "9hH3DPthDV8YMe0L",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Supprime un événement de l'agenda d'Aymane à partir de son ID (obtenu avec lire_agenda).",
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "id"
+        },
+        "eventId": "={{ $fromAI('Titre', \"Titre, jour et heure de l'événement à supprimer, ex. : test refus, mardi 3 novembre à 10h\", 'string') && $fromAI('Event_ID', \"ID de l'événement, obtenu avec lire_agenda\", 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        1304,
+        536
+      ],
+      "id": "3b98b5d6-b50e-4a96-85e0-3ff2aa6f6e95",
+      "name": "supprimer_evenement",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "p07clfA8Th8tAhz2",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Modifie un événement existant de l'agenda d'Aymane à partir de son ID (obtenu avec lire_agenda) : titre, début, fin.",
+        "operation": "update",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "id"
+        },
+        "eventId": "={{ $fromAI('Titre', \"Événement actuel avant modification : titre, jour et heure\", 'string') && $fromAI('Event_ID', \"ID de l'événement, obtenu avec lire_agenda\", 'string') }}",
+        "updateFields": {
+          "end": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('End', ``, 'string') }}",
+          "start": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Start', ``, 'string') }}",
+          "summary": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Summary', ``, 'string') }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        1768,
+        536
+      ],
+      "id": "88fc5a77-c06d-4c28-952b-41321c00dae7",
+      "name": "modifier_evenement",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "p07clfA8Th8tAhz2",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "message": "=📝 Mettre à jour cette candidature ?\nEntreprise : {{ $tool.parameters.Entreprise }}\nNouveau statut : {{ $tool.parameters.Statut }}",
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double"
+          }
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegramHitlTool",
+      "typeVersion": 1.2,
+      "position": [
+        2152,
+        328
+      ],
+      "id": "db56bf21-4d04-4a45-a04b-efdb3b38de27",
+      "name": "Validation candidatures",
+      "credentials": {
+        "telegramApi": {
+          "id": "9hH3DPthDV8YMe0L",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Met à jour le statut d'une candidature à partir de son numéro de ligne (row_number, obtenu avec lire_candidatures).",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Candidatures",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Statut": "={{ $fromAI('Statut', \"Nouveau statut, avec le même vocabulaire que les statuts déjà présents dans le tableau\", 'string') }}",
+            "row_number": "={{ $fromAI('Entreprise', \"Nom de l'entreprise, pour le message de validation\", 'string') && $fromAI('Ligne', \"Valeur row_number de la candidature, obtenue avec lire_candidatures\", 'number') }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Date de candidature",
+              "displayName": "Date de candidature",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Poste",
+              "displayName": "Poste",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Entreprise",
+              "displayName": "Entreprise",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Type",
+              "displayName": "Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Lieu",
+              "displayName": "Lieu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Lien",
+              "displayName": "Lien",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Documents envoyés",
+              "displayName": "Documents envoyés",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Statut",
+              "displayName": "Statut",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date de relance",
+              "displayName": "Date de relance",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        2232,
+        536
+      ],
+      "id": "5bc93579-62da-4cae-a714-9303b9f99a5e",
+      "name": "mettre_a_jour_statut",
+      "notesInFlow": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "yRK2FMvA8gHl65R2",
+          "name": "Google Sheets account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Orchestrateur",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Orchestrateur",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "lire_agenda": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_agenda",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "creer_evenement": {
+      "ai_tool": [
+        [
+          {
+            "node": "Validation Telegram",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "lire_emails": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_emails",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "creer_brouillon": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_emails",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent_agenda": {
+      "ai_tool": [
+        [
+          {
+            "node": "Orchestrateur",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "agent_agenda",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent_emails": {
+      "ai_tool": [
+        [
+          {
+            "node": "Orchestrateur",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "agent_emails",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent_candidatures": {
+      "ai_tool": [
+        [
+          {
+            "node": "Orchestrateur",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "agent_candidatures",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "lire_candidatures": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_candidatures",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Orchestrateur": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Télécharger audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Texte écrit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agenda du jour",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message non supporté",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Télécharger audio": {
+      "main": [
+        [
+          {
+            "node": "Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcription": {
+      "main": [
+        [
+          {
+            "node": "Texte vocal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Texte vocal": {
+      "main": [
+        [
+          {
+            "node": "Orchestrateur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Texte écrit": {
+      "main": [
+        [
+          {
+            "node": "Orchestrateur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chaque matin 7h30": {
+      "main": [
+        [
+          {
+            "node": "Agenda du jour",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agenda du jour": {
+      "main": [
+        [
+          {
+            "node": "Emails non lus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emails non lus": {
+      "main": [
+        [
+          {
+            "node": "Candidatures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidatures": {
+      "main": [
+        [
+          {
+            "node": "Rédiger briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rédiger briefing": {
+      "main": [
+        [
+          {
+            "node": "Envoyer briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Telegram": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_agenda",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "supprimer_evenement": {
+      "ai_tool": [
+        [
+          {
+            "node": "Validation Telegram",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "modifier_evenement": {
+      "ai_tool": [
+        [
+          {
+            "node": "Validation Telegram",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation candidatures": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_candidatures",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mettre_a_jour_statut": {
+      "ai_tool": [
+        [
+          {
+            "node": "Validation candidatures",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "timezone": "Europe/Paris"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

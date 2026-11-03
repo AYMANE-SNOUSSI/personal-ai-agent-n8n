@@ -1,12 +1,12 @@
 # Personal AI Agent (n8n + Gemini + Telegram)
 
-A personal assistant I use every day, built with n8n as a **multi-agent system**. I talk to it on Telegram in natural language; an **orchestrator agent** decides which specialised agent to call to read or update my **Google Calendar**, my **Gmail** inbox and my **job-application tracker** (Google Sheets).
+A personal assistant I use every day, built with n8n as a **multi-agent system**. I talk to it on Telegram, by text or voice; an **orchestrator agent** decides which specialised agent to call to read or update my **Google Calendar**, my **Gmail** inbox and my **job-application tracker** (Google Sheets). **Every write action waits for my approval** on Telegram.
 
-> **Current version:** v2.2: orchestrator + 3 specialised agents, text **and voice** input, and a **proactive morning briefing**. Previous versions are kept in `workflows/` and as [releases](../../releases).
+> **Current version:** v2.3: orchestrator + 3 specialised agents, text and voice input, proactive morning briefing, and **human-in-the-loop approval** before any write. Previous versions are kept in `workflows/` and as [releases](../../releases).
 
-| Morning briefing (v2.2) | Voice messages (v2.1) | Multi-agent routing (v2.0) |
-|---|---|---|
-| ![Demo v2.2](docs/demo-v2.2.png) | ![Demo v2.1](docs/demo-v2.1.png) | ![Demo v2](docs/demo-v2.png) |
+| Approval before every calendar change (v2.3) | Approval before updating the application tracker (v2.3) |
+|---|---|
+| ![Demo v2.3 calendar](docs/demo-v2.3.png) | ![Demo v2.3 tracker](docs/demo-v2.3b.png) |
 
 ---
 
@@ -14,21 +14,23 @@ A personal assistant I use every day, built with n8n as a **multi-agent system**
 
 | I write or say on Telegram | What happens |
 |---|---|
-| "What do I have on Tuesday?" | Orchestrator → `agent_agenda` → `lire_agenda` with the exact date range |
-| "Add dentist Tuesday at 3pm" | Orchestrator resolves "Tuesday" to an exact date → `agent_agenda` → `creer_evenement` |
-| "Which important emails did I get in the last 2 days?" | Orchestrator → `agent_emails` → `lire_emails` (Gmail search syntax), newsletters and ads filtered out |
-| "How many applications did I send, and which are pending?" | Orchestrator → `agent_candidatures` → `lire_candidatures` (read-only Google Sheet) |
-| 🎤 Voice: "Add a meeting with the lab on Thursday at 10" | Voice note downloaded → transcribed by Gemini → the transcription is shown back (🎤 ...) → orchestrator → `agent_agenda` → `creer_evenement` |
-| *(nothing: every day at 7:30)* | **Morning briefing** pushed to Telegram: today's events, important unread emails, applications pending or to follow up |
-| `/briefing` | Same briefing on demand |
-| A photo or a sticker | Polite refusal: "I only understand text and voice messages" (no LLM call) |
-| "I'm sick on Tuesday" | Orchestrator → `agent_agenda` to find the affected events, then **asks for my approval and the recipient's address** before calling `agent_emails` to create cancellation drafts |
+| "What do I have on Tuesday?" | Orchestrator → `agent_agenda` → `lire_agenda` with the exact date range (no approval: read only) |
+| "Add dinner tomorrow at 8pm" | `agent_agenda` → **approval request** "📅 Create this event? Dinner, Tuesday 3 November 20:00–21:00" → on ✅ `creer_evenement` |
+| "Move tomorrow's dinner to 9pm" | `lire_agenda` finds the event and its ID → **approval** "✏️ Before: … / After: …" → on ✅ `modifier_evenement` (title kept) |
+| "Delete Leg day today" | `lire_agenda` finds the event → **approval** "🗑 Delete this event? …" → on ✅ `supprimer_evenement`; on ❌ nothing is deleted |
+| "EDF replied, it's a rejection" | `agent_candidatures` → `lire_candidatures` (gets the row number) → **approval** "📝 EDF → Rejected" → on ✅ only the `Statut` cell of that row is updated |
+| "Google replied, it's a rejection" (not in the tracker) | The agent reports that no application matches and lists the existing ones: no approval request, no invented update |
+| "Which important emails did I get in the last 2 days?" | `agent_emails` → `lire_emails` (Gmail search syntax), newsletters and ads filtered out |
+| "I'm sick on Tuesday" | `agent_agenda` lists the affected events; cancellation **drafts** are prepared only after I give the recipient's address |
+| 🎤 Voice message | Downloaded → transcribed by Gemini → the transcription is shown back (🎤 …) → same flow as text |
+| *(nothing: every day at 7:30)* or `/briefing` | **Morning briefing**: today's events, important unread emails, applications pending or to follow up |
+| A photo or a sticker | Polite refusal, no LLM call |
 
 ---
 
-## Architecture (v2.2)
+## Architecture (v2.3)
 
-![Workflow v2.2](docs/architecture-v2.2.png)
+![Workflow v2.3](docs/architecture-v2.3.png)
 
 The workflow has two entry points: the conversational assistant (Telegram) and the morning briefing (schedule or `/briefing`).
 
@@ -38,19 +40,24 @@ Telegram Trigger
           └─► Switch (message type)
                 ├─ voice ─► Telegram · Get file ─► Gemini 3.1 Flash-Lite · Transcribe ─► texte ─┐
                 ├─ text  ─► texte ────────────────────────────────────────────────────────────┤
-                ├─ /briefing ─► (morning briefing pipeline, below)
+                ├─ /briefing ─► (morning briefing pipeline, below)                              │
                 └─ other ─► Telegram · "text and voice only"                                    │
                                                                                                ▼
               ORCHESTRATOR ── Gemini 3.5 Flash · Simple Memory (10 messages, keyed by chat ID)
                 │              retry ×3 (5 s) · error output
                 ├─ agent_agenda        ── Gemini 3.1 Flash-Lite
-                │     ├─ lire_agenda          Google Calendar · Get Many
-                │     └─ creer_evenement      Google Calendar · Create
+                │     ├─ lire_agenda                     Google Calendar · Get Many      (free)
+                │     └─ 🔒 Validation Telegram (human review)
+                │           ├─ creer_evenement           Google Calendar · Create
+                │           ├─ modifier_evenement        Google Calendar · Update
+                │           └─ supprimer_evenement       Google Calendar · Delete
                 ├─ agent_emails        ── Gemini 3.1 Flash-Lite
-                │     ├─ lire_emails          Gmail · Get Many (search query)
-                │     └─ creer_brouillon      Gmail · Draft · Create
+                │     ├─ lire_emails                     Gmail · Get Many                (free)
+                │     └─ creer_brouillon                 Gmail · Draft · Create          (draft only, never sent)
                 └─ agent_candidatures  ── Gemini 3.1 Flash-Lite
-                      └─ lire_candidatures    Google Sheets · Get Rows (read-only)
+                      ├─ lire_candidatures               Google Sheets · Get Rows        (free)
+                      └─ 🔒 Validation candidatures (human review)
+                            └─ mettre_a_jour_statut      Google Sheets · Update Row (match on row_number, Statut column only)
                 │
                 ├─ success ─► Telegram · Send message (HTML mode, escaped)
                 └─ error   ─► Telegram · "AI service temporarily overloaded"
@@ -64,7 +71,7 @@ Schedule 7:30 Europe/Paris ─┐
                                ─► Telegram · send
 ```
 
-Sub-agents are n8n **AI Agent Tool** nodes: for the orchestrator, each one is a single tool. Tool parameters (dates, search queries, email fields) are filled by the models at run time with `$fromAI()`.
+Sub-agents are n8n **AI Agent Tool** nodes. Approvals use n8n's **Human review** for tool calls (Telegram channel): the tool only runs if I click ✅; on ❌ the agent is told the action was refused.
 
 ---
 
@@ -72,32 +79,33 @@ Sub-agents are n8n **AI Agent Tool** nodes: for the orchestrator, each one is a 
 
 | Decision | Why |
 |---|---|
-| **No agent for the briefing** (v2.2) | The briefing always needs the same three sources, so the path is known in advance: data is fetched deterministically and a single LLM call writes the summary. Nothing can be forgotten by the model, and it costs 1 LLM call instead of ~8 through the orchestrator. *An agent is used only where the path depends on the request.* |
-| **`Execute Once` on the briefing nodes** (v2.2) | n8n runs a node once per input item: without it, Gmail and Sheets would be queried once per calendar event. |
-| **`Always Output Data` on the data sources** (v2.2) | An empty calendar day or inbox must not stop the pipeline; the prompt then outputs "Nothing planned today". |
-| **Normalise inputs before the agent** (v2.1) | Voice and text are both converted into one `texte` field before the orchestrator, so the agent logic doesn't change with the input type. Adding a new input (e.g. photos) means adding one branch, not touching the agents. |
-| **Show the transcription back** (v2.1) | Each voice answer starts with what the bot understood (🎤 ...), so a speech-recognition error is visible immediately instead of producing a silent wrong action. |
-| **Unsupported messages rejected without an LLM call** (v2.1) | Photos, stickers or files go to a fallback branch: no wasted quota, no hallucinated answer. |
-| **Orchestrator + specialised agents** (v2) | An agent with many tools picks the wrong tool more often. Each sub-agent has 1–2 tools and a short, focused system prompt; the orchestrator only routes and talks to me. Adding a new domain means adding one agent, not rewriting one big prompt. |
-| **Self-contained delegation** | Sub-agents have no memory and don't see the conversation. The orchestrator must pass a complete request with absolute dates ("Tuesday 3 November 2026", never "tomorrow"). |
-| **Strong model for routing, light model for execution** | The orchestrator (Gemini 3.5 Flash) does the hard part: understanding and planning. Sub-agents (Gemini 3.1 Flash-Lite) execute narrow tasks. Cheaper, and the free-tier quota is per model. |
-| **No "send email" tool** | Only drafts can be created. Nothing leaves my inbox without me reviewing it: safety by construction, not by prompt. |
-| **Approval before any email action** | For an absence, the orchestrator lists affected events and waits for my explicit "yes" + recipient address before delegating to `agent_emails`. |
-| **Read-only access to the application tracker** | The agent can report on my applications but cannot modify the sheet. |
+| **Read freely, write with approval** (v2.3) | Reads can't damage anything, so they run immediately. Every action that changes my calendar or my tracker (create, update, delete, status change) goes through a human-review node: a misheard voice note or a wrong date can't silently corrupt my data. |
+| **No approval on email drafts** (v2.3) | A draft already needs me to press "Send" in Gmail. A second approval would only add friction (approval fatigue) without adding safety. |
+| **Readable approval messages** (v2.3) | Delete and update only need an opaque event ID. The tool also asks the model for a human-readable `Titre` (title, day, time), used only in the approval message, so I know exactly what I'm approving. |
+| **Match rows on `row_number`, not on text** (v2.3) | Matching on the company name silently failed (no row updated, no error). `lire_candidatures` already returns each row's `row_number`; using it removes text matching and handles two applications at the same company. Only the `Statut` column is mapped, so no other cell can be overwritten. |
+| **Never claim an unconfirmed action** (v2.3) | During testing, the agent once reported "updated successfully" while the tool had updated nothing. Prompts now require an explicit tool result before confirming, and an empty result is reported as a failure. |
+| **No written confirmation before writes** (v2.3) | The agent first asked "Do you want…?" in chat, then sent the approval: two confirmations for one action. The Telegram approval is now the only one. |
+| **No agent for the briefing** (v2.2) | The briefing always needs the same three sources, so the path is known in advance: data is fetched deterministically and a single LLM call writes the summary (1 call instead of ~8). *An agent is used only where the path depends on the request.* |
+| **`Execute Once` / `Always Output Data`** (v2.2) | Without `Execute Once`, Gmail and Sheets would run once per calendar event; without `Always Output Data`, an empty day would stop the pipeline. |
+| **Normalise inputs before the agent** (v2.1) | Voice and text become one `texte` field before the orchestrator, so the agent logic doesn't depend on the input type. |
+| **Show the transcription back** (v2.1) | A speech-recognition error is visible immediately (🎤 …), and with v2.3 it can be refused before it changes anything. |
+| **Orchestrator + specialised agents** (v2.0) | An agent with many tools picks the wrong tool more often. Each sub-agent has few tools and a focused prompt; the orchestrator only routes and talks to me. |
+| **Self-contained delegation** | Sub-agents have no memory: the orchestrator passes complete requests with absolute dates ("Tuesday 3 November 2026", never "tomorrow"). |
+| **Strong model for routing, light model for execution** | Gemini 3.5 Flash for the orchestrator, 3.1 Flash-Lite for sub-agents, transcription and briefing. Cheaper, and the free-tier quota is per model. |
+| **No "send email" tool** | Only drafts can be created: safety by construction, not by prompt. |
 | **Chat ID allow-list** (`If` node) | A Telegram bot is publicly reachable; other chats are dropped before reaching any LLM or Google account. |
-| **Retry + error branch** | Gemini's free tier returns occasional `503` errors. The orchestrator retries 3 times, then sends a clear message instead of failing silently. |
+| **Retry + error branch** | Gemini's free tier returns occasional `503` errors: 3 retries, then a clear message instead of silence. |
 | **Plain text + HTML escaping** | Telegram's Markdown parser rejects unbalanced `*` / `_` (common in email addresses). |
-| **Dedicated Gemini API project** | Rate limits apply per project; this agent doesn't share quota with my other workflows. |
 
 ---
 
 ## Setup
 
-1. Import `workflows/assistant-personnel-v2.2.json` into n8n (**⋯ → Import from file**).
+1. Import `workflows/assistant-personnel-v2.3.json` into n8n (**⋯ → Import from file**).
 2. Create the credentials: **Telegram API** (token from [@BotFather](https://t.me/BotFather)), **Google Gemini API** (Google AI Studio), **Google Calendar**, **Gmail** and **Google Sheets** (OAuth2).
-3. In the `If` node **and** in `Envoyer briefing`, replace `YOUR_TELEGRAM_CHAT_ID` with your chat ID (send one message to the bot and read `message.chat.id` in the trigger output).
-4. In `lire_candidatures` **and** `Candidatures`, replace `YOUR_GOOGLE_SHEET_ID` with your tracker's ID (sheet name: `Candidatures`).
-5. Calendar nodes use your `primary` calendar by default. The workflow timezone is set to `Europe/Paris` (**⋯ → Settings**); change it for another time zone.
+3. Replace `YOUR_TELEGRAM_CHAT_ID` with your chat ID in `If`, `Envoyer briefing`, `Validation Telegram` and `Validation candidatures` (send one message to the bot and read `message.chat.id` in the trigger output).
+4. Replace `YOUR_GOOGLE_SHEET_ID` in `lire_candidatures`, `mettre_a_jour_statut` and `Candidatures` (sheet name: `Candidatures`, with a `Statut` column).
+5. Calendar nodes use your `primary` calendar. The workflow timezone is `Europe/Paris` (**⋯ → Settings**).
 6. Publish the workflow and write to your bot.
 
 Tool names and prompts are in French because I use the assistant in French.
@@ -106,30 +114,35 @@ Tool names and prompts are in French because I use the assistant in French.
 
 ## Limitations
 
-- **No quantitative evaluation yet.** Tested manually on the scenarios above. A test set measuring routing and tool-selection accuracy is planned (v2.4).
-- **Latency:** about 6–10 s per text message in v2 (orchestrator + sub-agent = at least 4 LLM calls), versus 2–3 s in v1; voice adds one transcription call.
-- **Transcription quality** depends on audio quality and accent; mitigated by showing the transcription back, not measured yet.
-- **Free-tier LLM:** subject to rate limits and `503` errors at demand peaks (handled by retry + error message).
-- **Date interpretation** depends on the model; the confirmation message makes mistakes visible.
+- **No quantitative evaluation yet.** Tested manually on the scenarios above. A test set measuring routing, tool selection and approval behaviour is planned (v2.4).
+- **Approval buttons open a link.** n8n's human review uses signed URL buttons: a click opens a short confirmation page (on Telegram Web, an "Open link?" dialog first). A link-free version would need a custom callback flow, rebuilt by hand outside n8n's human-review feature.
+- **Latency:** about 6–10 s per text message (orchestrator + sub-agent), plus the time I take to approve; voice adds one transcription call.
+- **Free-tier LLM:** rate limits and `503` errors at demand peaks (handled by retry + error message).
+- **Date and transcription accuracy** depend on the model; the approval message makes mistakes visible before they are applied.
 - **Simple Memory** is short-term and not persistent across n8n restarts.
-- **Briefing relevance** (which emails are "important") is judged by the LLM from subject and snippet only; it can miss or over-include emails.
-- **Single user** by design.
-- **Privacy:** email snippets and calendar titles are sent to the Gemini API.
+- **Briefing relevance** (which emails are "important") is judged from subject and snippet only.
+- **Single user** by design. **Privacy:** email snippets, calendar titles and tracker rows are sent to the Gemini API.
 
 ---
 
 ## Versions & roadmap
 
-- [x] **v1.0**: single agent, 4 tools (Calendar and Gmail), Telegram interface. See `workflows/assistant-personnel-v1.json`
+- [x] **v1.0**: single agent, 4 tools (Calendar and Gmail), Telegram interface
 - [x] **v2.0**: multi-agent: orchestrator + `agent_agenda`, `agent_emails`, `agent_candidatures`; retry and error handling
-- [x] **v2.1**: Telegram voice messages (Gemini transcription), transcription shown back, unsupported message types rejected
+- [x] **v2.1**: voice messages (Gemini transcription), transcription shown back, unsupported messages rejected
 - [x] **v2.2**: proactive morning briefing at 7:30 + `/briefing` on demand (deterministic pipeline, single LLM call)
-- [ ] **v2.3**: approve / cancel buttons before any write action
-- [ ] **v2.4**: evaluation set (~15 prompts) with routing and tool-selection accuracy, using n8n Evaluations
+- [x] **v2.3**: human-in-the-loop approval for every write; update and delete events; update application status (row-number matching)
+- [ ] **v2.4**: evaluation set (~15 prompts) with routing, tool-selection and approval accuracy, using n8n Evaluations
 
-### v1.0 demo
+Every version's workflow is in `workflows/` (`assistant-personnel-v1.json` … `-v2.3.json`).
 
-| Reading and updating the calendar | Handling an absence: multi-step reasoning |
+### Previous demos
+
+| Morning briefing (v2.2) | Voice messages (v2.1) | Multi-agent routing (v2.0) |
+|---|---|---|
+| ![Demo v2.2](docs/demo-v2.2.png) | ![Demo v2.1](docs/demo-v2.1.png) | ![Demo v2](docs/demo-v2.png) |
+
+| v1.0: reading and updating the calendar | v1.0: handling an absence |
 |---|---|
 | ![Calendar demo](docs/demo.png) | ![Absence demo](docs/demo-2.png) |
 
@@ -137,7 +150,7 @@ Tool names and prompts are in French because I use the assistant in French.
 
 ## Tech stack
 
-n8n · Multi-agent orchestration (AI Agent + AI Agent Tool) · Google Gemini · Telegram Bot API · Gemini audio transcription · Google Calendar, Gmail and Sheets APIs
+n8n · Multi-agent orchestration (AI Agent + AI Agent Tool) · Human-in-the-loop tool approval · Google Gemini (chat + audio transcription) · Telegram Bot API · Google Calendar, Gmail and Sheets APIs
 
 ## Author
 
