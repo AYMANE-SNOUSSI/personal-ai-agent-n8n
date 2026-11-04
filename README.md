@@ -2,7 +2,7 @@
 
 A personal assistant I use every day, built with n8n as a **multi-agent system**. I talk to it on Telegram, by text or voice; an **orchestrator agent** decides which specialised agent to call to read or update my **Google Calendar**, my **Gmail** inbox and my **job-application tracker** (Google Sheets). **Every write action waits for my approval** on Telegram.
 
-> **Current version:** v2.4: orchestrator + 3 specialised agents, text and voice input, proactive morning briefing, **human-in-the-loop approval** before any write, and an **end-to-end evaluation** ([results](#evaluation-v24)). Previous versions are kept in `workflows/` and as [releases](../../releases).
+> **Current version:** v2.5: orchestrator + 3 specialised agents, text and voice input, proactive morning briefing with **location-aware weather**, **human-in-the-loop approval** before any write, and an **end-to-end evaluation** ([results](#evaluation-v24)). Previous versions are kept in `workflows/` and as [releases](../../releases).
 
 **Evaluation (15 end-to-end cases):** routing 14/15 · approval on 4/4 write actions and 0/11 read-only cases · 0 writes without approval · 0 hallucinations · 12/15 correct and useful answers.
 
@@ -25,14 +25,15 @@ A personal assistant I use every day, built with n8n as a **multi-agent system**
 | "Which important emails did I get in the last 2 days?" | `agent_emails` → `lire_emails` (Gmail search syntax), newsletters and ads filtered out |
 | "I'm sick on Tuesday" | `agent_agenda` lists the affected events; cancellation **drafts** are prepared only after I give the recipient's address |
 | 🎤 Voice message | Downloaded → transcribed by Gemini → the transcription is shown back (🎤 …) → same flow as text |
-| *(nothing: every day at 7:30)* or `/briefing` | **Morning briefing**: today's events, important unread emails, applications pending or to follow up |
+| *(nothing: every day at 7:30)* or `/briefing` | **Morning briefing**: weather where I am, today's events, important unread emails, applications pending or to follow up |
+| `/ville Paris` or sharing my location (📎 → Location) | Saves my current position; the next briefings use the weather there (default: Caen) |
 | A photo or a sticker | Polite refusal, no LLM call |
 
 ---
 
-## Architecture (v2.3)
+## Architecture (v2.5)
 
-![Workflow v2.3](docs/architecture-v2.3.png)
+![Workflow v2.5](docs/architecture-v2.5.png)
 
 The workflow has two entry points: the conversational assistant (Telegram) and the morning briefing (schedule or `/briefing`).
 
@@ -43,6 +44,8 @@ Telegram Trigger
                 ├─ voice ─► Telegram · Get file ─► Gemini 3.1 Flash-Lite · Transcribe ─► texte ─┐
                 ├─ text  ─► texte ────────────────────────────────────────────────────────────┤
                 ├─ /briefing ─► (morning briefing pipeline, below)                              │
+                ├─ /ville <city> ─► Open-Meteo geocoding ─┐                                     │
+                ├─ location shared ───────────────────────┴─► save position (workflow static data) │
                 └─ other ─► Telegram · "text and voice only"                                    │
                                                                                                ▼
               ORCHESTRATOR ── Gemini 3.5 Flash · Simple Memory (10 messages, keyed by chat ID)
@@ -69,6 +72,7 @@ Schedule 7:30 Europe/Paris ─┐
 /briefing ──────────────────┴─► Google Calendar · today's events
                                ─► Gmail · unread last 24 h (no promotions/social)
                                ─► Google Sheets · applications
+                               ─► saved position (default Caen) ─► Open-Meteo · daily forecast
                                ─► Gemini 3.1 Flash-Lite · write the briefing (1 call)
                                ─► Telegram · send
 ```
@@ -111,6 +115,8 @@ One expected label was revised after review: for case 9 ("cancel my dentist appo
 
 | Decision | Why |
 |---|---|
+| **Weather as data, not as an agent** (v2.5) | The weather is fetched by one HTTP node (Open-Meteo: free, no API key) and converted to a French sentence in code before the LLM sees it: no extra LLM call, and the model cannot misread the WMO weather codes. If the API fails, the briefing is still sent, without the weather line. |
+| **Location on demand, not tracking** (v2.5) | The position changes only when I share it or type `/ville`; it is stored in the workflow's static data. Continuous GPS tracking would need an app running on my phone, for little benefit and a real privacy cost. |
 | **Evaluate end-to-end on the live system** (v2.4) | n8n's built-in Evaluations run the workflow without Telegram, while memory, replies and approvals all depend on it. Testing the real bot, declining every approval, measures exactly what I use without modifying data. |
 | **Read freely, write with approval** (v2.3) | Reads can't damage anything, so they run immediately. Every action that changes my calendar or my tracker (create, update, delete, status change) goes through a human-review node: a misheard voice note or a wrong date can't silently corrupt my data. |
 | **No approval on email drafts** (v2.3) | A draft already needs me to press "Send" in Gmail. A second approval would only add friction (approval fatigue) without adding safety. |
@@ -134,11 +140,11 @@ One expected label was revised after review: for case 9 ("cancel my dentist appo
 
 ## Setup
 
-1. Import `workflows/assistant-personnel-v2.4.json` into n8n (**⋯ → Import from file**).
+1. Import `workflows/assistant-personnel-v2.5.json` into n8n (**⋯ → Import from file**).
 2. Create the credentials: **Telegram API** (token from [@BotFather](https://t.me/BotFather)), **Google Gemini API** (Google AI Studio), **Google Calendar**, **Gmail** and **Google Sheets** (OAuth2).
 3. Replace `YOUR_TELEGRAM_CHAT_ID` with your chat ID in `If`, `Envoyer briefing`, `Validation Telegram` and `Validation candidatures` (send one message to the bot and read `message.chat.id` in the trigger output).
 4. Replace `YOUR_GOOGLE_SHEET_ID` in `lire_candidatures`, `mettre_a_jour_statut` and `Candidatures` (sheet name: `Candidatures`, with a `Statut` column).
-5. Calendar nodes use your `primary` calendar. The workflow timezone is `Europe/Paris` (**⋯ → Settings**).
+5. Calendar nodes use your `primary` calendar. The workflow timezone is `Europe/Paris` (**⋯ → Settings**). The default weather location is Caen (`Position actuelle` node); send `/ville <your city>` once to change it.
 6. Publish the workflow and write to your bot.
 
 Tool names and prompts are in French because I use the assistant in French.
@@ -154,6 +160,7 @@ Tool names and prompts are in French because I use the assistant in French.
 - **Date and transcription accuracy** depend on the model; the approval message makes mistakes visible before they are applied.
 - **Simple Memory** is short-term and not persistent across n8n restarts.
 - **Briefing relevance** (which emails are "important") is judged from subject and snippet only.
+- **Weather location** is the last one I sent, not live; it is saved only by the published workflow (not by manual test runs), and Telegram Web cannot share a location (use `/ville`).
 - **Single user** by design. **Privacy:** email snippets, calendar titles and tracker rows are sent to the Gemini API.
 
 ---
@@ -166,15 +173,19 @@ Tool names and prompts are in French because I use the assistant in French.
 - [x] **v2.2**: proactive morning briefing at 7:30 + `/briefing` on demand (deterministic pipeline, single LLM call)
 - [x] **v2.3**: human-in-the-loop approval for every write; update and delete events; update application status (row-number matching)
 - [x] **v2.4**: end-to-end evaluation on 15 cases (routing, approvals, hallucinations, latency) + prompt fixes for the failures found
-- [ ] **v2.5**: weather in the morning briefing (Open-Meteo, no extra LLM call)
+- [x] **v2.5**: weather in the morning briefing (Open-Meteo, no extra LLM call), location set with `/ville` or by sharing it on Telegram
 
-Every version's workflow is in `workflows/` (`assistant-personnel-v1.json` … `-v2.4.json`).
+Every version's workflow is in `workflows/` (`assistant-personnel-v1.json` … `-v2.5.json`).
 
 ### Previous demos
 
-| Morning briefing (v2.2) | Voice messages (v2.1) | Multi-agent routing (v2.0) |
-|---|---|---|
-| ![Demo v2.2](docs/demo-v2.2.png) | ![Demo v2.1](docs/demo-v2.1.png) | ![Demo v2](docs/demo-v2.png) |
+| Briefing with location-aware weather (v2.5) | Morning briefing (v2.2) |
+|---|---|
+| ![Demo v2.5](docs/demo-v2.5.png) | ![Demo v2.2](docs/demo-v2.2.png) |
+
+| Voice messages (v2.1) | Multi-agent routing (v2.0) |
+|---|---|
+| ![Demo v2.1](docs/demo-v2.1.png) | ![Demo v2](docs/demo-v2.png) |
 
 | v1.0: reading and updating the calendar | v1.0: handling an absence |
 |---|---|
@@ -184,7 +195,7 @@ Every version's workflow is in `workflows/` (`assistant-personnel-v1.json` … `
 
 ## Tech stack
 
-n8n · Multi-agent orchestration (AI Agent + AI Agent Tool) · Human-in-the-loop tool approval · Google Gemini (chat + audio transcription) · Telegram Bot API · Google Calendar, Gmail and Sheets APIs
+n8n · Multi-agent orchestration (AI Agent + AI Agent Tool) · Human-in-the-loop tool approval · Google Gemini (chat + audio transcription) · Telegram Bot API · Open-Meteo · Google Calendar, Gmail and Sheets APIs
 
 ## Author
 
